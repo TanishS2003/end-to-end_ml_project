@@ -18,15 +18,60 @@ class DateFeatureExtractor(BaseEstimator, TransformerMixin):
     """
 
     def fit(self, X, y=None):
+        logging.info('DateFeatureExtractor: Starting fit')
+        logging.info(f'DateFeatureExtractor: Input shape: {X.shape}')
+
+        # Validate input
+        if 'Date' not in X.columns:
+            logging.error(
+                'DateFeatureExtractor: Date column not found in input')
+            raise ValueError('Date column is required')
+
+        # Set fitted attribute for sklearn compatibility
+        self.n_features_in_ = X.shape[1]
+        logging.info(
+            f'DateFeatureExtractor: Fitted successfully with {self.n_features_in_} features')
+
         return self
 
     def transform(self, X):
+        logging.info('DateFeatureExtractor: Starting transform')
+        logging.info(f'DateFeatureExtractor: Input shape: {X.shape}')
+
+        # Check if fitted
+        if not hasattr(self, 'n_features_in_'):
+            logging.error('DateFeatureExtractor: Not fitted yet!')
+            raise ValueError(
+                'DateFeatureExtractor is not fitted. Call fit() first.')
+
+        # Validate input
+        if 'Date' not in X.columns:
+            logging.error(
+                'DateFeatureExtractor: Date column not found in transform input')
+            raise ValueError('Date column is required')
+
         X = X.copy()
-        X['Date'] = pd.to_datetime(X['Date'])
+
+        # Convert dates
+        try:
+            X['Date'] = pd.to_datetime(X['Date'])
+            logging.info('DateFeatureExtractor: Date conversion successful')
+        except Exception as e:
+            logging.error(f'DateFeatureExtractor: Date conversion failed: {e}')
+            raise
+
+        # Extract features
         X['Year'] = X['Date'].dt.year
         X['Month'] = X['Date'].dt.month
         X['DayOfWeek'] = X['Date'].dt.dayofweek
-        return X.drop('Date', axis=1)
+
+        result = X.drop('Date', axis=1)
+        logging.info(
+            f'DateFeatureExtractor: Transform complete. Output shape: {result.shape}')
+        logging.info(
+            f'DateFeatureExtractor: New columns added: Year, Month, DayOfWeek')
+
+        return result
 
 
 # Custom Transformer: Encode teams based on historical performance
@@ -40,27 +85,111 @@ class TeamStrengthEncoder(BaseEstimator, TransformerMixin):
         self.team_stats_map = {}
         self.global_mean = 0
 
-    def fit(self, X, y):
+    def fit(self, X, y=None):
+        logging.info('TeamStrengthEncoder: Starting fit')
+        logging.info(f'TeamStrengthEncoder: Input shape: {X.shape}')
+        logging.info(f'TeamStrengthEncoder: Encoding columns: {self.cols}')
+
+        # Validate y is provided
+        if y is None:
+            logging.error(
+                'TeamStrengthEncoder: Target variable y is required during fit')
+            raise ValueError(
+                "TeamStrengthEncoder requires y (target) during fit")
+
+        logging.info(f'TeamStrengthEncoder: Target shape: {y.shape}')
+
+        # Validate columns exist
+        for col in self.cols:
+            if col not in X.columns:
+                logging.error(
+                    f'TeamStrengthEncoder: Column {col} not found in input')
+                raise ValueError(f'Column {col} not found in input DataFrame')
+
         # Calculate average strength per team using target
-        temp_df = pd.DataFrame({
-            'team': pd.concat([X[self.cols[0]], X[self.cols[1]]]),
-            'points': np.tile(y, 2)
-        })
-        self.team_stats_map = temp_df.groupby(
-            'team')['points'].mean().to_dict()
-        self.global_mean = temp_df['points'].mean()
+        try:
+            temp_df = pd.DataFrame({
+                'team': pd.concat([X[self.cols[0]], X[self.cols[1]]]),
+                'points': np.tile(y, 2)
+            })
+            logging.info(
+                f'TeamStrengthEncoder: Created temporary mapping with {len(temp_df)} rows')
+
+            self.team_stats_map = temp_df.groupby(
+                'team')['points'].mean().to_dict()
+            self.global_mean = temp_df['points'].mean()
+
+            logging.info(
+                f'TeamStrengthEncoder: Encoded {len(self.team_stats_map)} unique teams')
+            logging.info(
+                f'TeamStrengthEncoder: Global mean: {self.global_mean:.4f}')
+            logging.info(
+                f'TeamStrengthEncoder: Sample encodings: {dict(list(self.team_stats_map.items())[:3])}')
+
+        except Exception as e:
+            logging.error(f'TeamStrengthEncoder: Error during encoding: {e}')
+            raise
+
+        # Set fitted attributes for sklearn compatibility
+        self.n_features_in_ = X.shape[1]
+        self.is_fitted_ = True
+
+        logging.info(
+            f'TeamStrengthEncoder: Fitted successfully with {self.n_features_in_} features')
+
         return self
 
     def transform(self, X):
-        X = X.copy()
+        logging.info('TeamStrengthEncoder: Starting transform')
+        logging.info(f'TeamStrengthEncoder: Input shape: {X.shape}')
+
+        # Check if fitted
+        if not hasattr(self, 'is_fitted_'):
+            logging.error('TeamStrengthEncoder: Not fitted yet!')
+            raise ValueError("This TeamStrengthEncoder instance is not fitted yet. "
+                             "Call 'fit' with appropriate arguments before using transform.")
+
+        logging.info('TeamStrengthEncoder: Verified transformer is fitted')
+        logging.info(
+            f'TeamStrengthEncoder: Using {len(self.team_stats_map)} team encodings')
+
+        # Validate columns exist
         for col in self.cols:
+            if col not in X.columns:
+                logging.error(
+                    f'TeamStrengthEncoder: Column {col} not found in transform input')
+                raise ValueError(f'Column {col} not found in input DataFrame')
+
+        X = X.copy()
+
+        # Track encoding statistics
+        unknown_teams = set()
+
+        for col in self.cols:
+            # Count teams before encoding
+            unique_teams_before = X[col].nunique()
+
+            # Apply encoding
             X[col] = X[col].map(self.team_stats_map).fillna(self.global_mean)
+
+            # Track unknown teams (would use global mean)
+            # Note: Can't reliably detect unknown teams after encoding
+
+            logging.info(
+                f'TeamStrengthEncoder: Encoded column {col} with {unique_teams_before} unique teams')
+
+        logging.info(
+            f'TeamStrengthEncoder: Transform complete. Output shape: {X.shape}')
+
         return X
 
 
 @dataclass
 class DataTransformationConfig:
-    preprocessor_obj_file_path = os.path.join('artifacts', 'preprocessor.pkl')
+    train_data_path: str = os.path.join('artifacts', 'train.csv')
+    test_data_path: str = os.path.join('artifacts', 'test.csv')
+    preprocessor_obj_file_path: str = os.path.join(
+        'artifacts', 'preprocessor.pkl')
 
 
 class DataTransformation:
@@ -71,12 +200,17 @@ class DataTransformation:
         """
         Creates football-specific features from raw match data.
         This creates running statistics for each team.
+
+        CRITICAL: This must be called on the FULL dataset BEFORE train/test split
+        to avoid data leakage!
         """
         logging.info('Starting football feature engineering')
+        logging.info(f'Input data shape: {df.shape}')
 
         # Convert date to datetime and sort
-        df['Date'] = pd.to_datetime(df['Date'], dayfirst=True)
+        df['Date'] = pd.to_datetime(df['Date'])
         df = df.sort_values('Date').reset_index(drop=True)
+        logging.info('✓ Data sorted chronologically')
 
         # Get unique teams
         teams = pd.concat([df['HomeTeam'], df['AwayTeam']]).unique()
@@ -89,6 +223,7 @@ class DataTransformation:
         } for team in teams}
 
         processed_rows = []
+        filtered_count = 0
 
         for index, row in df.iterrows():
             home_t = row['HomeTeam']
@@ -141,8 +276,10 @@ class DataTransformation:
             # Only add if both teams played >= 3 games (reduce volatility)
             if h_stat['MP'] >= 3 and a_stat['MP'] >= 3:
                 processed_rows.append(match_features)
+            else:
+                filtered_count += 1
 
-            # Update stats AFTER recording (to prevent data leakage)
+            # Update stats AFTER recording (to prevent data leakage within this function)
             # Update Home Team
             h_pts = 3 if row['FTR'] == 'H' else (1 if row['FTR'] == 'D' else 0)
             team_stats[home_t]['MP'] += 1
@@ -162,8 +299,11 @@ class DataTransformation:
             team_stats[away_t]['A_Pts'] += a_pts
 
         result_df = pd.DataFrame(processed_rows)
-        logging.info(
-            f'Feature engineering completed: {len(result_df)} samples created')
+        logging.info(f'✓ Feature engineering completed')
+        logging.info(f'  Original matches: {len(df)}')
+        logging.info(f'  Filtered out (MP < 3): {filtered_count}')
+        logging.info(f'  Final samples: {len(result_df)}')
+        logging.info(f'  Features created: {len(result_df.columns)}')
 
         return result_df
 
@@ -183,62 +323,214 @@ class DataTransformation:
                 ]
             )
 
-            logging.info('Preprocessing pipeline created successfully')
+            logging.info('✓ Preprocessing pipeline created successfully')
+            logging.info(
+                f'  Pipeline steps: {list(preprocessing_pipeline.named_steps.keys())}')
 
             return preprocessing_pipeline
 
         except Exception as e:
             raise CustomException(e, sys)
 
-    def initiate_data_transformation(self, train_path, test_path):
+    def initiate_data_transformation(self, raw_data_path):
+        """
+        CORRECTED VERSION: Feature engineering happens BEFORE train/test split!
+
+        This prevents data leakage by ensuring:
+        1. Feature engineering runs once on full dataset
+        2. Team statistics are cumulative across all data
+        3. Train and test share the same feature engineering context
+        4. Split happens AFTER features are created
+        """
         try:
-            logging.info('Entered data transformation method')
+            logging.info('='*70)
+            logging.info('DATA TRANSFORMATION STARTED')
+            logging.info('='*70)
 
-            # Read train and test data
-            train_df = pd.read_csv(train_path)
-            test_df = pd.read_csv(test_path)
-            logging.info('Read train and test data completed')
-            logging.info(f'Train data shape: {train_df.shape}')
-            logging.info(f'Test data shape: {test_df.shape}')
+            # ================================================================
+            # STEP 1: Read Raw Data
+            # ================================================================
+            logging.info('-'*70)
+            logging.info('STEP 1: Loading Raw Data')
+            logging.info('-'*70)
+            logging.info(f'Reading raw data from: {raw_data_path}')
 
-            # Apply football feature engineering
-            logging.info('Applying feature engineering to train data')
-            train_df = self.process_football_features(train_df)
+            df = pd.read_csv(raw_data_path)
+            logging.info(
+                f'✓ Raw data loaded: {df.shape[0]} rows, {df.shape[1]} columns')
 
-            logging.info('Applying feature engineering to test data')
-            test_df = self.process_football_features(test_df)
+            # Validate
+            required_columns = ['Date', 'HomeTeam',
+                                'AwayTeam', 'FTHG', 'FTAG', 'FTR']
+            missing = set(required_columns) - set(df.columns)
+            if missing:
+                logging.error(f'Missing required columns: {missing}')
+                raise ValueError(f'Missing columns: {missing}')
+            logging.info('✓ All required columns present')
 
-            # Get preprocessing object
-            logging.info('Obtaining preprocessing object')
-            preprocessing_obj = self.get_data_transformer_object()
+            # ================================================================
+            # STEP 2: Feature Engineering on FULL Dataset
+            # ================================================================
+            logging.info('-'*70)
+            logging.info('STEP 2: Feature Engineering (FULL DATASET)')
+            logging.info('-'*70)
+            logging.info(
+                '⚠ CRITICAL: Processing entire dataset to avoid data leakage')
+
+            df_features = self.process_football_features(df)
+            logging.info(
+                f'✓ Features created for full dataset: {df_features.shape}')
+
+            # ================================================================
+            # STEP 3: Train/Test Split (AFTER Feature Engineering)
+            # ================================================================
+            logging.info('-'*70)
+            logging.info('STEP 3: Train/Test Split')
+            logging.info('-'*70)
+            logging.info('Splitting data (80/20, time-based, no shuffle)')
+
+            # Calculate split index (80% train, 20% test)
+            split_idx = int(len(df_features) * 0.8)
+
+            train_df = df_features.iloc[:split_idx].reset_index(drop=True)
+            test_df = df_features.iloc[split_idx:].reset_index(drop=True)
+
+            logging.info(f'✓ Split completed:')
+            logging.info(
+                f'  Train: {len(train_df)} samples ({len(train_df)/len(df_features)*100:.1f}%)')
+            logging.info(
+                f'  Test:  {len(test_df)} samples ({len(test_df)/len(df_features)*100:.1f}%)')
+
+            # Save the splits for reference
+            train_df.to_csv(
+                self.data_transformation_config.train_data_path, index=False)
+            test_df.to_csv(
+                self.data_transformation_config.test_data_path, index=False)
+            logging.info(
+                f'✓ Train data saved to: {self.data_transformation_config.train_data_path}')
+            logging.info(
+                f'✓ Test data saved to: {self.data_transformation_config.test_data_path}')
+
+            # ================================================================
+            # STEP 4: Separate Features and Target
+            # ================================================================
+            logging.info('-'*70)
+            logging.info('STEP 4: Separating Features and Target')
+            logging.info('-'*70)
 
             target_column_name = 'Result'
-
-            # Separate features and target
-            # Map target: H -> 0, D -> 1, A -> 2
             target_mapping = {'H': 0, 'D': 1, 'A': 2}
+            logging.info(f'Target column: {target_column_name}')
+            logging.info(f'Target mapping: {target_mapping}')
 
+            # Train
             input_feature_train_df = train_df.drop(
                 columns=[target_column_name])
             target_feature_train_df = train_df[target_column_name].map(
                 target_mapping)
 
+            logging.info(
+                f'Train features shape: {input_feature_train_df.shape}')
+            logging.info(
+                f'Train target shape: {target_feature_train_df.shape}')
+
+            train_target_dist = target_feature_train_df.value_counts().sort_index()
+            logging.info(f'Train target distribution:')
+            for idx, count in train_target_dist.items():
+                label = ['Home Win', 'Draw', 'Away Win'][idx]
+                pct = count / len(target_feature_train_df) * 100
+                logging.info(f'  {label} ({idx}): {count} ({pct:.1f}%)')
+
+            # Test
             input_feature_test_df = test_df.drop(columns=[target_column_name])
             target_feature_test_df = test_df[target_column_name].map(
                 target_mapping)
 
-            logging.info(
-                'Applying preprocessing on training and test dataframes')
+            logging.info(f'Test features shape: {input_feature_test_df.shape}')
+            logging.info(f'Test target shape: {target_feature_test_df.shape}')
 
-            # Fit on train, transform both
-            input_feature_train_arr = preprocessing_obj.fit_transform(
-                input_feature_train_df,
-                target_feature_train_df
-            )
-            input_feature_test_arr = preprocessing_obj.transform(
-                input_feature_test_df)
+            test_target_dist = target_feature_test_df.value_counts().sort_index()
+            logging.info(f'Test target distribution:')
+            for idx, count in test_target_dist.items():
+                label = ['Home Win', 'Draw', 'Away Win'][idx]
+                pct = count / len(target_feature_test_df) * 100
+                logging.info(f'  {label} ({idx}): {count} ({pct:.1f}%)')
 
-            # Combine features and target
+            # Check for unmapped values
+            if target_feature_train_df.isnull().any():
+                invalid = train_df[target_column_name][target_feature_train_df.isnull(
+                )].unique()
+                logging.error(f'Invalid target values in train: {invalid}')
+                raise ValueError(f'Invalid target values: {invalid}')
+
+            if target_feature_test_df.isnull().any():
+                invalid = test_df[target_column_name][target_feature_test_df.isnull(
+                )].unique()
+                logging.error(f'Invalid target values in test: {invalid}')
+                raise ValueError(f'Invalid target values: {invalid}')
+
+            logging.info('✓ No invalid target values')
+
+            # ================================================================
+            # STEP 5: Apply Preprocessing Pipeline
+            # ================================================================
+            logging.info('-'*70)
+            logging.info('STEP 5: Preprocessing Pipeline')
+            logging.info('-'*70)
+
+            preprocessing_obj = self.get_data_transformer_object()
+
+            # Fit on training data
+            logging.info('Fitting preprocessing pipeline on training data...')
+            try:
+                preprocessing_obj.fit(
+                    input_feature_train_df, target_feature_train_df)
+                logging.info('✓ Pipeline fitted successfully')
+            except Exception as e:
+                logging.error(f'Pipeline fitting failed: {str(e)}')
+                raise
+
+            # Verify all transformers are fitted
+            for step_name, transformer in preprocessing_obj.named_steps.items():
+                if hasattr(transformer, 'is_fitted_'):
+                    logging.info(
+                        f'✓ {step_name}: is_fitted = {transformer.is_fitted_}')
+                elif hasattr(transformer, 'n_features_in_'):
+                    logging.info(
+                        f'✓ {step_name}: n_features_in = {transformer.n_features_in_}')
+                else:
+                    logging.warning(
+                        f'⚠ {step_name}: No fitted attributes found')
+
+            # Transform training data
+            logging.info('Transforming training data...')
+            try:
+                input_feature_train_arr = preprocessing_obj.transform(
+                    input_feature_train_df)
+                logging.info(
+                    f'✓ Train data transformed: {input_feature_train_arr.shape}')
+            except Exception as e:
+                logging.error(f'Train transformation failed: {str(e)}')
+                raise
+
+            # Transform test data
+            logging.info('Transforming test data...')
+            try:
+                input_feature_test_arr = preprocessing_obj.transform(
+                    input_feature_test_df)
+                logging.info(
+                    f'✓ Test data transformed: {input_feature_test_arr.shape}')
+            except Exception as e:
+                logging.error(f'Test transformation failed: {str(e)}')
+                raise
+
+            # ================================================================
+            # STEP 6: Combine Features and Target
+            # ================================================================
+            logging.info('-'*70)
+            logging.info('STEP 6: Creating Final Arrays')
+            logging.info('-'*70)
+
             train_arr = np.c_[
                 input_feature_train_arr,
                 np.array(target_feature_train_df)
@@ -248,17 +540,66 @@ class DataTransformation:
                 np.array(target_feature_test_df)
             ]
 
-            logging.info(f'Train array shape: {train_arr.shape}')
-            logging.info(f'Test array shape: {test_arr.shape}')
+            logging.info(f'✓ Final train array: {train_arr.shape}')
+            logging.info(f'✓ Final test array: {test_arr.shape}')
 
-            # Save preprocessing object
-            logging.info('Saving preprocessing object')
-            save_object(
-                file_path=self.data_transformation_config.preprocessor_obj_file_path,
-                obj=preprocessing_obj
-            )
+            # Verify no NaN values
+            train_nan = np.isnan(train_arr).sum()
+            test_nan = np.isnan(test_arr).sum()
 
-            logging.info('Data transformation completed')
+            if train_nan > 0:
+                logging.warning(
+                    f'⚠ Train array contains {train_nan} NaN values')
+            else:
+                logging.info('✓ Train array has no NaN values')
+
+            if test_nan > 0:
+                logging.warning(f'⚠ Test array contains {test_nan} NaN values')
+            else:
+                logging.info('✓ Test array has no NaN values')
+
+            # ================================================================
+            # STEP 7: Save Preprocessing Object
+            # ================================================================
+            logging.info('-'*70)
+            logging.info('STEP 7: Saving Artifacts')
+            logging.info('-'*70)
+            logging.info(
+                f'Saving preprocessor to: {self.data_transformation_config.preprocessor_obj_file_path}')
+
+            try:
+                save_object(
+                    file_path=self.data_transformation_config.preprocessor_obj_file_path,
+                    obj=preprocessing_obj
+                )
+                logging.info('✓ Preprocessing object saved successfully')
+            except Exception as e:
+                logging.error(f'Failed to save preprocessor: {str(e)}')
+                raise
+
+            # ================================================================
+            # COMPLETION SUMMARY
+            # ================================================================
+            logging.info('='*70)
+            logging.info('DATA TRANSFORMATION COMPLETED SUCCESSFULLY')
+            logging.info('='*70)
+            logging.info('Summary:')
+            logging.info(f'  Original raw data: {len(df)} matches')
+            logging.info(
+                f'  After feature engineering: {len(df_features)} samples')
+            logging.info(
+                f'  Train samples: {train_arr.shape[0]} ({train_arr.shape[0]/len(df_features)*100:.1f}%)')
+            logging.info(
+                f'  Test samples: {test_arr.shape[0]} ({test_arr.shape[0]/len(df_features)*100:.1f}%)')
+            logging.info(f'  Features per sample: {train_arr.shape[1] - 1}')
+            logging.info(f'  Files created:')
+            logging.info(
+                f'    - {self.data_transformation_config.train_data_path}')
+            logging.info(
+                f'    - {self.data_transformation_config.test_data_path}')
+            logging.info(
+                f'    - {self.data_transformation_config.preprocessor_obj_file_path}')
+            logging.info('='*70)
 
             return (
                 train_arr,
@@ -267,20 +608,35 @@ class DataTransformation:
             )
 
         except Exception as e:
+            logging.error('='*70)
+            logging.error('DATA TRANSFORMATION FAILED')
+            logging.error('='*70)
+            logging.error(f'Error: {str(e)}')
+            logging.error('='*70)
             raise CustomException(e, sys)
 
 
 if __name__ == "__main__":
     from src.components.data_ingestion import DataIngestion
 
-    # First run data ingestion
+    # Step 1: Data Ingestion
+    logging.info('\n' + '='*70)
+    logging.info('RUNNING CORRECTED PIPELINE')
+    logging.info('='*70 + '\n')
+
     obj = DataIngestion()
-    train_data, test_data = obj.initiate_data_ingestion()
+    raw_data_path = obj.initiate_data_ingestion()
 
-    # Then run data transformation
+    # Step 2: Data Transformation
     data_transformation = DataTransformation()
-    train_arr, test_arr, _ = data_transformation.initiate_data_transformation(
-        train_data, test_data)
+    train_arr, test_arr, preprocessor_path = data_transformation.initiate_data_transformation(
+        raw_data_path
+    )
 
+    print(f"\n{'='*70}")
+    print("✓ PIPELINE COMPLETED SUCCESSFULLY")
+    print(f"{'='*70}")
     print(f"Train array shape: {train_arr.shape}")
     print(f"Test array shape: {test_arr.shape}")
+    print(f"Preprocessor saved: {preprocessor_path}")
+    print(f"{'='*70}\n")
