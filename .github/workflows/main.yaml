@@ -1,0 +1,73 @@
+name: Deploy to AWS EC2
+
+on:
+  push:
+    branches: [ main, master ]
+    paths-ignore: [ 'README.md' ]
+  workflow_dispatch:
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v3
+      
+    - name: Deploy to EC2
+      env:
+        PRIVATE_KEY: ${{ secrets.AWS_EC2_KEY }}
+        HOST: ${{ secrets.AWS_EC2_HOST }}
+        USER: ${{ secrets.AWS_EC2_USER }}
+        REPO_NAME: ${{ secrets.REPO_NAME }}
+      run: |
+        # Save private key to file
+        echo "$PRIVATE_KEY" > private_key.pem
+        chmod 600 private_key.pem
+        
+        # Deploy to EC2
+        ssh -o StrictHostKeyChecking=no -i private_key.pem ${USER}@${HOST} << 'ENDSSH'
+          # Navigate to project directory
+          cd ~/${REPO_NAME}
+          
+          # Pull latest code
+          echo "📥 Pulling latest code from GitHub..."
+          git pull origin main
+          
+          # Activate virtual environment
+          echo "🔧 Activating virtual environment..."
+          source venv/bin/activate
+          
+          # Install/Update dependencies
+          echo "📦 Installing dependencies..."
+          pip install --upgrade pip
+          pip install -r requirements.txt
+          
+          # Restart the application
+          echo "🔄 Restarting Streamlit service..."
+          sudo systemctl restart streamlit
+          
+          # Check if service started successfully
+          sleep 5
+          if sudo systemctl is-active --quiet streamlit; then
+            echo "✅ Deployment successful! Service is running."
+          else
+            echo "❌ Deployment failed! Service is not running."
+            sudo systemctl status streamlit
+            exit 1
+          fi
+        ENDSSH
+        
+        # Clean up
+        rm -f private_key.pem
+        
+    - name: Deployment Status
+      if: success()
+      run: |
+        echo "🎉 Deployment completed successfully!"
+        echo "Your app is live at: http://${{ secrets.AWS_EC2_HOST }}:8501"
+        
+    - name: Deployment Failed
+      if: failure()
+      run: |
+        echo "❌ Deployment failed! Check the logs above for details."
