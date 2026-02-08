@@ -131,20 +131,25 @@ if __name__ == "__main__":
     from src.components.data_transformation import DataTransformation
 
     # Step 1: Data Ingestion
+    logging.info('='*70)
     logging.info('Starting Data Ingestion')
+    logging.info('='*70)
     obj = DataIngestion()
-    train_data, test_data = obj.initiate_data_ingestion()
+    raw_data_path = obj.initiate_data_ingestion()  # Returns single path now
 
-    # Step 2: Data Transformation
+    # Step 2: Data Transformation (includes splitting)
+    logging.info('='*70)
     logging.info('Starting Data Transformation')
+    logging.info('='*70)
     data_transformation = DataTransformation()
     train_arr, test_arr, _ = data_transformation.initiate_data_transformation(
-        train_data,
-        test_data
+        raw_data_path  # Takes single path, does splitting internally
     )
 
     # Step 3: Model Training
+    logging.info('='*70)
     logging.info('Starting Model Training')
+    logging.info('='*70)
     modeltrainer = ModelTrainer()
     accuracy = modeltrainer.initiate_model_trainer(train_arr, test_arr)
 
