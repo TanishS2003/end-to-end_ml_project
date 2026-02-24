@@ -1,9 +1,17 @@
+"""
+Data Ingestion Component
+Auto-downloads La Liga data from Football-Data.co.uk
+"""
+
 import os
 import sys
+import pandas as pd
+import requests
+from io import StringIO
+from dataclasses import dataclass
+
 from src.exception import CustomException
 from src.logger import logging
-import pandas as pd
-from dataclasses import dataclass
 
 
 @dataclass
@@ -13,105 +21,67 @@ class DataIngestionConfig:
 
 class DataIngestion:
     def __init__(self):
-        self.ingestion_config = DataIngestionConfig()
         logging.info('DataIngestion initialized')
-        logging.info(
-            f'Raw data will be saved to: {self.ingestion_config.raw_data_path}')
+        self.ingestion_config = DataIngestionConfig()
+
+        # 6 seasons of La Liga data
+        self.dataset_urls = {
+            '2021-22': 'https://www.football-data.co.uk/mmz4281/2122/SP1.csv',
+            '2022-23': 'https://www.football-data.co.uk/mmz4281/2223/SP1.csv',
+            '2023-24': 'https://www.football-data.co.uk/mmz4281/2324/SP1.csv',
+            '2024-25': 'https://www.football-data.co.uk/mmz4281/2425/SP1.csv',
+            '2025-26': 'https://www.football-data.co.uk/mmz4281/2526/SP1.csv',
+        }
+
+    def download_data_from_url(self, url: str, season: str) -> pd.DataFrame:
+        try:
+            logging.info(f'Downloading {season}...')
+            response = requests.get(url, timeout=30)
+            response.raise_for_status()
+            df = pd.read_csv(StringIO(response.text))
+            df['Season'] = season
+            logging.info(f'✓ {season}: {len(df)} matches')
+            return df
+        except Exception as e:
+            logging.error(f'Error downloading {season}: {str(e)}')
+            raise CustomException(e, sys)
 
     def initiate_data_ingestion(self):
-        logging.info('='*70)
-        logging.info('DATA INGESTION STARTED')
-        logging.info('='*70)
-
         try:
-            # List of CSV files (Past 3 seasons + current)
-            csv_files = [
-                'notebook/SP1 (3).csv',
-                'notebook/SP1 (2).csv',
-                'notebook/SP1 (1).csv',
-                'notebook/SP1.csv'
-            ]
+            logging.info("="*70)
+            logging.info("DATA INGESTION STARTED")
+            logging.info("="*70)
 
-            logging.info(f'Files to process: {len(csv_files)}')
-
-            # Read and concatenate all CSV files
-            logging.info('Reading dataset from multiple files')
-            dfs = []
-            for i, file in enumerate(csv_files, 1):
-                logging.info(f'Reading file {i}/{len(csv_files)}: {file}')
-                df = pd.read_csv(file)
-                logging.info(f'✓ Loaded {len(df)} rows from {file}')
-                dfs.append(df)
-
-            # Concatenate all dataframes
-            df = pd.concat(dfs, ignore_index=True)
-            logging.info(
-                f'✓ Concatenated all files: {len(df)} total rows, {len(df.columns)} columns')
-
-            # Validate required columns
-            required_columns = ['Date', 'HomeTeam',
-                                'AwayTeam', 'FTHG', 'FTAG', 'FTR']
-            missing_cols = set(required_columns) - set(df.columns)
-            if missing_cols:
-                logging.error(f'Missing required columns: {missing_cols}')
-                raise ValueError(f'Missing required columns: {missing_cols}')
-            logging.info('✓ All required columns present')
-
-            # Check for null values
-            null_counts = df[required_columns].isnull().sum()
-            total_nulls = null_counts.sum()
-            if total_nulls > 0:
-                logging.warning(f'Found {total_nulls} null values:')
-                for col, count in null_counts[null_counts > 0].items():
-                    logging.warning(f'  {col}: {count} nulls')
-            else:
-                logging.info('✓ No null values in required columns')
-
-            # Sort by date to ensure chronological order
-            logging.info('Sorting data by date...')
-            df['Date'] = pd.to_datetime(df['Date'], dayfirst=True)
-            df = df.sort_values('Date').reset_index(drop=True)
-            logging.info(f'✓ Data sorted chronologically')
-            logging.info(
-                f'  Date range: {df["Date"].min()} to {df["Date"].max()}')
-
-            # Create artifacts directory
             os.makedirs(os.path.dirname(
                 self.ingestion_config.raw_data_path), exist_ok=True)
 
-            # Save raw data
-            logging.info(
-                f'Saving raw data to {self.ingestion_config.raw_data_path}')
-            df.to_csv(self.ingestion_config.raw_data_path,
-                      index=False, header=True)
-            logging.info('✓ Raw data saved successfully')
+            all_dataframes = []
+            for season, url in self.dataset_urls.items():
+                df = self.download_data_from_url(url, season)
+                all_dataframes.append(df)
 
-            logging.info('='*70)
-            logging.info('DATA INGESTION COMPLETED')
-            logging.info('='*70)
-            logging.info(f'Summary:')
-            logging.info(f'  - Total matches: {len(df)}')
-            logging.info(f'  - Columns: {len(df.columns)}')
-            logging.info(
-                f'  - Date range: {df["Date"].min().date()} to {df["Date"].max().date()}')
-            logging.info(
-                f'  - Unique teams: {pd.concat([df["HomeTeam"], df["AwayTeam"]]).nunique()}')
-            logging.info(
-                f'  - Raw data saved: {self.ingestion_config.raw_data_path}')
-            logging.info('='*70)
+            df = pd.concat(all_dataframes, ignore_index=True)
+            logging.info(f'✓ Total matches: {len(df)}')
+
+            # Validate
+            required_columns = ['Date', 'HomeTeam',
+                                'AwayTeam', 'FTHG', 'FTAG', 'FTR']
+            missing = [c for c in required_columns if c not in df.columns]
+            if missing:
+                raise ValueError(f'Missing columns: {missing}')
+
+            # Sort by date
+            df['Date'] = pd.to_datetime(
+                df['Date'], format='%d/%m/%Y', errors='coerce')
+            df = df.sort_values('Date').reset_index(drop=True)
+
+            df.to_csv(self.ingestion_config.raw_data_path, index=False)
+
+            logging.info("DATA INGESTION COMPLETED")
+            logging.info("="*70)
 
             return self.ingestion_config.raw_data_path
 
         except Exception as e:
-            logging.error('='*70)
-            logging.error('DATA INGESTION FAILED')
-            logging.error('='*70)
             logging.error(f'Error: {str(e)}')
-            logging.error('='*70)
             raise CustomException(e, sys)
-
-
-if __name__ == "__main__":
-    obj = DataIngestion()
-    raw_data_path = obj.initiate_data_ingestion()
-    print(f"\n✓ Raw data saved to: {raw_data_path}\n")

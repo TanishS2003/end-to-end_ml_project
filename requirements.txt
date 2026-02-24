@@ -4,4 +4,10 @@ seaborn
 scikit-learn
 scikit-optimize
 streamlit
+plotly
+xgboost
+lightgbm
+catboost
+requests
+scikit-learn-intelex
 # -e .

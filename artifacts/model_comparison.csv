@@ -1,0 +1,5 @@
+Model,Test_Acc,CV_Score,Away_Recall,Time
+RandomForest,0.4754,0.4856,0.5000,47.1s
+XGBoost,0.4638,0.4809,0.4808,61.4s
+LightGBM,0.4812,0.4839,0.5096,97.8s
+CatBoost,0.4899,0.4873,0.5481,171.2s

@@ -1,270 +1,169 @@
+"""
+Streamlit Web Application
+"""
+
 from src.logger import logging
 from src.exception import CustomException
 from src.pipeline.predict_pipeline import PredictPipeline, CustomData
+from src.pipeline.team_stats_calculator import TeamStatsCalculator
 import streamlit as st
 import pandas as pd
-import sys
+import plotly.graph_objects as go
 import os
 
-# Add parent directory to path to import from src
-sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+# Page config
+st.set_page_config(page_title="La Liga Predictor",
+                   page_icon="⚽", layout="wide")
 
-
-# Page configuration
-st.set_page_config(
-    page_title="La Liga Match Predictor",
-    page_icon="⚽",
-    layout="centered"
-)
-
-# Custom CSS
-st.markdown("""
-    <style>
-    .main {
-        padding: 2rem;
-    }
-    .stButton>button {
-        width: 100%;
-        background-color: #FF4B4B;
-        color: white;
-        font-weight: bold;
-        padding: 0.75rem;
-        font-size: 1.1rem;
-    }
-    .result-text {
-        font-size: 2rem;
-        font-weight: bold;
-        text-align: center;
-        margin: 1rem 0;
-    }
-    .prob-text {
-        font-size: 1.2rem;
-        margin: 0.5rem 0;
-    }
-    </style>
-""", unsafe_allow_html=True)
-
-# Spanish La Liga teams
-TEAMS = [
+TEAMS = sorted([
     'Alaves', 'Almeria', 'Ath Bilbao', 'Ath Madrid', 'Barcelona',
     'Betis', 'Cadiz', 'Celta', 'Elche', 'Espanol', 'Getafe',
     'Girona', 'Granada', 'Las Palmas', 'Leganes', 'Levante',
-    'Mallorca', 'Osasuna', 'Oviedo', 'Real Madrid', 'Sevilla',
-    'Sociedad', 'Valencia', 'Valladolid', 'Vallecano', 'Villarreal'
-]
+    'Mallorca', 'Osasuna', 'Real Madrid', 'Real Sociedad',
+    'Sevilla', 'Valencia', 'Vallecano', 'Villarreal'
+])
 
-# Header
-st.title("⚽ La Liga Match Predictor")
-st.markdown(
-    "### Predict the outcome of Spanish La Liga matches using Machine Learning")
-st.markdown("---")
 
-# Sidebar with information
-with st.sidebar:
-    st.header("ℹ️ About")
-    st.info(
-        """
-        This app predicts the outcome of Spanish La Liga football matches 
-        using a Random Forest model trained on historical match data.
-        
-        **How it works:**
-        1. Select the home team
-        2. Select the away team
-        3. Click 'Predict Match Outcome'
-        4. View the prediction and probabilities
-        
-        **Predictions:**
-        - **H** = Home Win
-        - **D** = Draw
-        - **A** = Away Win
-        """
-    )
+def main():
+    st.title("⚽ La Liga Match Predictor")
+    st.markdown("---")
 
-    st.header("📊 Model Info")
-    st.markdown("""
-        - **Algorithm:** Random Forest Classifier
-        - **Optimization:** Bayesian Search
-        - **Features:** Team rankings, form, goals, etc.
-        - **Training Data:** 4 seasons of La Liga matches
-    """)
+    # Sidebar Match Selection
+    st.sidebar.header("Match Setup")
+    home_team = st.sidebar.selectbox(
+        "🏠 Home Team", TEAMS, index=TEAMS.index('Barcelona'))
+    away_team = st.sidebar.selectbox(
+        "🚀 Away Team", TEAMS, index=TEAMS.index('Real Madrid'))
 
-    st.header("⚠️ Disclaimer")
-    st.warning(
-        """
-        This is a prediction model for educational purposes. 
-        Football matches are unpredictable and many factors 
-        can influence the outcome. Use predictions responsibly.
-        """
-    )
+    if home_team == away_team:
+        st.sidebar.error("Please select two different teams.")
+        return
 
-# Main content
-col1, col2 = st.columns(2)
+    if not os.path.exists('artifacts/data.csv'):
+        st.error("⚠️ Data file not found. Please run training pipeline first.")
+        return
 
-with col1:
-    st.subheader("🏠 Home Team")
-    home_team = st.selectbox(
-        "Select Home Team",
-        options=sorted(TEAMS),
-        index=sorted(TEAMS).index('Barcelona'),
-        key='home'
-    )
+    calc = TeamStatsCalculator()
+    h_stats = calc.get_team_stats(home_team)
+    a_stats = calc.get_team_stats(away_team)
 
-with col2:
-    st.subheader("✈️ Away Team")
-    away_team = st.selectbox(
-        "Select Away Team",
-        options=sorted(TEAMS),
-        index=sorted(TEAMS).index('Real Madrid'),
-        key='away'
-    )
+    # Calculation logic for explanation
+    h_quality = (h_stats['Pts_MP'] * 0.5) + (h_stats['GD']/20 * 0.5)
+    a_quality = (a_stats['Pts_MP'] * 0.5) + (a_stats['GD']/20 * 0.5)
+    s_ratio = h_quality / max(a_quality, 0.1)
 
-# Validation
-if home_team == away_team:
-    st.error("⚠️ Please select different teams for home and away!")
-    st.stop()
+    # SECTION 1: QUALITY ANALYSIS
+    st.header("🔍 Match Balance Analysis")
+    col1, col2, col3 = st.columns(3)
 
-# Display selected match
-st.markdown("---")
-st.markdown(f"### 🎯 Selected Match")
-st.markdown(f"## **{home_team}** 🆚 **{away_team}**")
-st.markdown("---")
+    with col1:
+        st.metric(f"{home_team} Quality", f"{h_quality:.2f}",
+                  help="Combined score of win rate and goal efficiency.")
+    with col2:
+        st.metric("Strength Gap", f"{s_ratio:.2f}x",
+                  help="If this is above 1.0, the Home team is statistically superior.")
+    with col3:
+        st.metric(f"{away_team} Quality", f"{a_quality:.2f}",
+                  help="Combined score of win rate and goal efficiency.")
 
-# Predict button
-if st.button("🔮 Predict Match Outcome", type="primary"):
-    try:
-        logging.info("="*70)
-        logging.info(f"Prediction requested: {home_team} vs {away_team}")
-        logging.info("="*70)
+    st.markdown("---")
 
-        with st.spinner('🤖 Analyzing match data and making prediction...'):
-            # Create custom data
-            custom_data = CustomData(
-                home_team=home_team,
-                away_team=away_team
+    # SECTION 2: VISUALS & PREDICTION
+    # Adjusted ratio for better chart visibility
+    v_col1, v_col2 = st.columns([1.2, 1])
+
+    with v_col1:
+        st.subheader("📊 Performance Radar")
+
+        # 1. Standardized Points Logic (0-10 scale for all)
+        categories = ['Attack Strength', 'Defense Solidity',
+                      'League Rank', 'Venue Form', 'Overall Class']
+
+        # Points Explanation:
+        # Attack: Avg goals per game scaled to 10
+        # Defense: 10 minus avg goals conceded (Higher = better defense)
+        # Rank: (21 - Rank) / 2 -> Rank 1 becomes 10, Rank 20 becomes 0.5
+        # Venue Form: Home/Away points per match * 3.33 (3.0 pts * 3.33 = 10)
+        # Class: Total points per match * 3.33
+
+        h_vals = [
+            min(h_stats['Gls']/max(h_stats['Rank'], 1)*5, 10),
+            max(10 - (h_stats['GA']/max(h_stats['Rank'], 1)*5), 0),
+            max(21 - h_stats['Rank'], 1)/2,
+            h_stats['H_Pts_MP']*3.33,
+            h_stats['Pts_MP']*3.33
+        ]
+
+        a_vals = [
+            min(a_stats['Gls']/max(a_stats['Rank'], 1)*5, 10),
+            max(10 - (a_stats['GA']/max(a_stats['Rank'], 1)*5), 0),
+            max(21 - a_stats['Rank'], 1)/2,
+            a_stats['A_Pts_MP']*3.33,
+            a_stats['Pts_MP']*3.33
+        ]
+
+        fig = go.Figure()
+        fig.add_trace(go.Scatterpolar(r=h_vals, theta=categories,
+                      fill='toself', name=home_team, line_color="#1c07df"))
+        fig.add_trace(go.Scatterpolar(r=a_vals, theta=categories,
+                      fill='toself', name=away_team, line_color="#ff2e0e"))
+
+        fig.update_layout(
+            polar=dict(
+                radialaxis=dict(visible=True, range=[
+                                0, 10], gridcolor="gray", tickfont=dict(size=10)),
+                angularaxis=dict(tickfont=dict(size=12, color="white"))
+            ),
+            showlegend=True,
+            template="plotly_dark",
+            # Tight margins to prevent cutting off
+            margin=dict(l=50, r=50, t=20, b=20),
+            height=450
+        )
+        st.plotly_chart(fig, use_container_width=True)
+
+        # Point Explainer Legend
+        with st.expander("ℹ️ How to read this chart"):
+            st.write("""
+            **Scale: 0 (Poor) to 10 (Elite)**
+            - **Attack Strength:** Based on goals scored relative to matches played.
+            - **Defense Solidity:** Higher score means the team concedes fewer goals.
+            - **League Rank:** Derived from current table position (1st = 10 pts).
+            - **Venue Form:** Performance specific to Home ground (for Home team) or Away ground (for Away team).
+            - **Overall Class:** Historical consistency across all matches.
+            """)
+
+    with v_col2:
+        st.subheader("🔮 ML Prediction")
+        st.info(
+            "The model analyzes 29 unique features including team momentum and historical dominance.")
+
+        if st.button("CALCULATE PROBABILITIES"):
+            data = CustomData(
+                home_team=home_team, away_team=away_team,
+                home_rank=h_stats['Rank'], home_pts_mp=h_stats['Pts_MP'],
+                home_gd=h_stats['GD'], home_h_pts_mp=h_stats['H_Pts_MP'],
+                home_gls=h_stats['Gls'], home_ga=h_stats['GA'],
+                away_rank=a_stats['Rank'], away_pts_mp=a_stats['Pts_MP'],
+                away_gd=a_stats['GD'], away_a_pts_mp=a_stats['A_Pts_MP'],
+                away_gls=a_stats['Gls'], away_ga=a_stats['GA']
             )
 
-            logging.info("Custom data object created")
+            df = data.get_data_as_dataframe()
+            pipeline = PredictPipeline()
+            result, probs = pipeline.predict(df)
 
-            # Convert to DataFrame
-            pred_df = custom_data.get_data_as_dataframe()
-            logging.info(f"Data converted to DataFrame: {pred_df.shape}")
+            res_map = {'H': home_team, 'D': 'a Draw', 'A': away_team}
 
-            # Make prediction
-            predict_pipeline = PredictPipeline()
-            prediction, probabilities = predict_pipeline.predict(pred_df)
+            st.markdown(f"### Result: **{res_map[result]}**")
 
-            logging.info(f"Prediction completed: {prediction}")
-            logging.info(f"Probabilities: {probabilities}")
+            # Highlight result with color
+            cols = st.columns(3)
+            for i, (outcome, val) in enumerate(probs.items()):
+                with cols[i]:
+                    st.metric(outcome, f"{val:.1%}")
+                    st.progress(val)
 
-        # Display results
-        st.success("✅ Prediction completed!")
 
-        logging.info("Displaying results to user")
-
-        # Display prediction with larger text
-        result_map = {
-            'H': f'🏆 {home_team} Win',
-            'D': '🤝 Draw',
-            'A': f'🏆 {away_team} Win'
-        }
-
-        result_emoji = {
-            'H': '🟢',
-            'D': '🟡',
-            'A': '🔵'
-        }
-
-        # Main prediction display
-        st.markdown(f'<p class="result-text">{result_emoji[prediction]} Predicted: {result_map[prediction]}</p>',
-                    unsafe_allow_html=True)
-
-        st.markdown("---")
-
-        # Display probabilities
-        st.markdown("### 📊 Prediction Probabilities")
-
-        col1, col2, col3 = st.columns(3)
-
-        with col1:
-            st.metric(
-                label=f"🏠 {home_team} Win",
-                value=f"{probabilities['Home Win']:.1%}",
-                delta=None
-            )
-
-        with col2:
-            st.metric(
-                label="🤝 Draw",
-                value=f"{probabilities['Draw']:.1%}",
-                delta=None
-            )
-
-        with col3:
-            st.metric(
-                label=f"✈️ {away_team} Win",
-                value=f"{probabilities['Away Win']:.1%}",
-                delta=None
-            )
-
-        # Probability bar chart
-        st.markdown("---")
-        prob_df = pd.DataFrame({
-            'Outcome': [f'{home_team} Win', 'Draw', f'{away_team} Win'],
-            'Probability': [
-                probabilities['Home Win'],
-                probabilities['Draw'],
-                probabilities['Away Win']
-            ]
-        })
-
-        st.bar_chart(prob_df.set_index('Outcome'))
-
-        # Confidence indicator
-        max_prob = max(probabilities.values())
-        if max_prob > 0.6:
-            st.success("🎯 High confidence prediction!")
-            logging.info("High confidence prediction displayed")
-        elif max_prob > 0.45:
-            st.info("📊 Moderate confidence prediction")
-            logging.info("Moderate confidence prediction displayed")
-        else:
-            st.warning("⚠️ Low confidence - match could go either way!")
-            logging.info("Low confidence prediction displayed")
-
-        logging.info("="*70)
-        logging.info("Prediction display completed successfully")
-        logging.info("="*70)
-
-    except FileNotFoundError as e:
-        error_msg = f"Model files not found: {str(e)}"
-        logging.error(error_msg)
-        st.error("""
-            ❌ Model files not found! 
-            
-            Please make sure you have trained the model first by running:
-            ```
-            python train_pipeline.py
-            ```
-            
-            This will create the required model files in the 'artifacts/' directory.
-        """)
-    except CustomException as e:
-        error_msg = f"CustomException occurred: {str(e)}"
-        logging.error(error_msg)
-        st.error(f"❌ An error occurred: {str(e)}")
-        st.error("Please check the logs for more details.")
-    except Exception as e:
-        error_msg = f"Unexpected error: {str(e)}"
-        logging.error(error_msg)
-        logging.error(f"Error type: {type(e).__name__}")
-        st.error(f"❌ An unexpected error occurred: {str(e)}")
-        st.error("Please check the logs for more details.")
-
-# Footer
-st.markdown("---")
-st.markdown("""
-    <div style='text-align: center; color: #666; padding: 2rem;'>
-        <p>⚽ Built with Streamlit and Machine Learning</p>
-        <p>Data: Spanish La Liga (2022-2026)</p>
-    </div>
-""", unsafe_allow_html=True)
+if __name__ == "__main__":
+    main()
