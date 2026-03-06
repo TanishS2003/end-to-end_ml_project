@@ -1,60 +1,47 @@
 ## ⚽ La Liga Match Predictor
 
-A production-ready end-to-end Machine Learning application that predicts Spanish La Liga match outcomes. This project demonstrates a complete MLOps lifecycle, from modular data engineering to automated cloud deployment.
+A production-grade, end-to-end Machine Learning application that predicts Spanish La Liga outcomes using a high-performance ensemble of Deep Learning and Gradient Boosting. This project demonstrates a complete MLOps lifecycle, from advanced feature engineering to automated cloud deployment.
 
 🌐 **[View Live Web App](http://13.40.77.75:8501/)**
 
-
 # 🎯 Project Overview
 
-This repository implements a robust ML pipeline that transforms historical football data into actionable match insights. It focuses on clean code architecture, scalability, and automated delivery.
+This repository implements a robust ML pipeline that transforms raw football data into actionable match insights. By analyzing underlying "dominance" metrics—like Shots on Target and Corner pressure—this project breaks the 50% accuracy barrier in a three-class problem, providing a more scientific alternative to traditional win/loss modeling.
 
-# ⚙️ End-to-End ML Workflow
+# ⚙️ Advanced ML Workflow
 
-This project follows a professional lifecycle to ensure reproducibility and production readiness:
+This project follows a professional lifecycle designed for high-stakes temporal data:
 
-Data Ingestion: Automatically collects raw match data from source directories and splits it into training and testing sets while maintaining data integrity.
-
-Data Transformation: Implements feature engineering and preprocessing pipelines (scaling, encoding) to convert raw data into model-ready features.
-
-Model Training: Utilizes a Random Forest Classifier with hyperparameters tuned via Bayesian Search (Scikit-optimize) to maximize predictive accuracy.
-
-Model Evaluation: Validates performance using industry-standard metrics (Accuracy, Precision, Recall) to ensure the model outperforms baseline benchmarks.
-
-MLOps & Logging: Every step is tracked via a custom logging module, with a centralized exception handling system for robust debugging.
-
-Deployment (CI/CD): Uses GitHub Actions to automatically trigger deployments to an AWS EC2 instance, ensuring the live app is always in sync with the latest code.
+- **Data Ingestion**: Automatically downloads and merges 6 seasons of La Liga data, maintaining strict chronological integrity and sorting.
+- **Feature Engineering (Underlying Metrics)**: Implements 44 features, including Shots on Target (SoT), corner pressure, conversion rates, and defensive solidity.
+- **Leakage Prevention**: Replaced static encoders with a **Recursive Cumulative Pedigree** tracker and chronological splits, ensuring the model never "peeks" into future seasonal performance.
+- **Hybrid Ensemble Training**: 
+    - **CatBoost**: Optimized via **Bayesian Search** for superior handling of categorical strength gaps.
+    - **PyTorch Neural Network**: A custom `TabularNN` architecture with **Cyclical Date Encoding** (Sin/Cos) to capture seasonal football patterns.
+    - **Weighted Soft Voting**: A tuned ensemble that blends probabilities to maximize both raw Accuracy and Draw Recall.
+- **Deployment (CI/CD)**: Uses GitHub Actions to automatically trigger deployments to an **AWS EC2** instance, ensuring the live app is always in sync with the latest code.
 
 # ✨ Key Features
 
-Match Predictions: Instant Win/Draw/Away Win probabilities for 26 La Liga teams.
-
-Interactive UI: Clean, responsive Streamlit dashboard with visual analytics.
-
-Production Standards: Decoupled architecture (Ingestion → Transformation → Training).
-
-Automated CI/CD: Real-time deployment to AWS on every code push.
+- **Ensemble Predictions**: Real-time Win/Draw/Away Win probabilities calculated by a CatBoost & Neural Net hybrid stack.
+- **Match Balance Analysis**: Visualizes the "Strength Gap" and "Overall Class" of opponents to explain the model's logic.
+- **Performance Radars**: Interactive Plotly charts comparing Attack Strength, Defense Solidity, and Venue Form.
+- **Dynamic Momentum**: Analyzes the last 5 games of "Underlying Threat" (SoT/SoT Conceded) rather than just points.
 
 # 🛠️ Tech Stack
 
-Core: Python 3.13, Scikit-learn, Pandas, NumPy
-
-Optimization: Scikit-optimize (Bayesian Search)
-
-Frontend: Streamlit
-
-DevOps: GitHub Actions, AWS EC2, Systemd
-
-
+- **Core**: Python 3.13, **PyTorch**, **CatBoost**, Scikit-learn, Pandas, NumPy
+- **Optimization**: **Scikit-optimize** (Bayesian Search)
+- **Ensembling**: **Skorch** (Scikit-learn wrapper for PyTorch)
+- **Frontend**: Streamlit & Plotly
+- **DevOps**: GitHub Actions, AWS EC2, Docker, Systemd
 
 # 🚀 Quick Start
 
-1. Clone & Setup
+### 1. Clone & Setup
 
 git clone [https://github.com/TanishS2003/end-to-end_ml_project.git](https://github.com/TanishS2003/end-to-end_ml_project.git)
-
 cd end-to-end_ml_project
-
 pip install -r requirements.txt
 
 
