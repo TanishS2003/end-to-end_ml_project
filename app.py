@@ -1,5 +1,5 @@
 """
-Streamlit Web Application
+Streamlit Web Application - Final Production Version
 """
 
 from src.logger import logging
@@ -40,7 +40,7 @@ def main():
         return
 
     if not os.path.exists('artifacts/data.csv'):
-        st.error("⚠️ Data file not found. Please run training pipeline first.")
+        st.error("⚠️ Data file not found. Please run the training pipeline first.")
         return
 
     calc = TeamStatsCalculator()
@@ -69,22 +69,13 @@ def main():
     st.markdown("---")
 
     # SECTION 2: VISUALS & PREDICTION
-    # Adjusted ratio for better chart visibility
     v_col1, v_col2 = st.columns([1.2, 1])
 
     with v_col1:
         st.subheader("📊 Performance Radar")
 
-        # 1. Standardized Points Logic (0-10 scale for all)
         categories = ['Attack Strength', 'Defense Solidity',
                       'League Rank', 'Venue Form', 'Overall Class']
-
-        # Points Explanation:
-        # Attack: Avg goals per game scaled to 10
-        # Defense: 10 minus avg goals conceded (Higher = better defense)
-        # Rank: (21 - Rank) / 2 -> Rank 1 becomes 10, Rank 20 becomes 0.5
-        # Venue Form: Home/Away points per match * 3.33 (3.0 pts * 3.33 = 10)
-        # Class: Total points per match * 3.33
 
         h_vals = [
             min(h_stats['Gls']/max(h_stats['Rank'], 1)*5, 10),
@@ -116,13 +107,11 @@ def main():
             ),
             showlegend=True,
             template="plotly_dark",
-            # Tight margins to prevent cutting off
             margin=dict(l=50, r=50, t=20, b=20),
             height=450
         )
         st.plotly_chart(fig, use_container_width=True)
 
-        # Point Explainer Legend
         with st.expander("ℹ️ How to read this chart"):
             st.write("""
             **Scale: 0 (Poor) to 10 (Elite)**
@@ -136,17 +125,38 @@ def main():
     with v_col2:
         st.subheader("🔮 ML Prediction")
         st.info(
-            "The model analyzes 29 unique features including team momentum and historical dominance.")
+            "The model evaluates advanced underlying metrics including Shots on Target, corner pressure, clinical conversion rates, and cyclical momentum.")
 
-        if st.button("CALCULATE PROBABILITIES"):
+        if st.button("CALCULATE PROBABILITIES", key="main_calc"):
+
+            # Instantiate CustomData with ALL the newly engineered metrics
             data = CustomData(
                 home_team=home_team, away_team=away_team,
+
+                # Standard Metrics
                 home_rank=h_stats['Rank'], home_pts_mp=h_stats['Pts_MP'],
                 home_gd=h_stats['GD'], home_h_pts_mp=h_stats['H_Pts_MP'],
-                home_gls=h_stats['Gls'], home_ga=h_stats['GA'],
+                home_gls=h_stats['Gls'], home_ga=h_stats['GA'], home_mp=h_stats['MP'],
+
                 away_rank=a_stats['Rank'], away_pts_mp=a_stats['Pts_MP'],
                 away_gd=a_stats['GD'], away_a_pts_mp=a_stats['A_Pts_MP'],
-                away_gls=a_stats['Gls'], away_ga=a_stats['GA']
+                away_gls=a_stats['Gls'], away_ga=a_stats['GA'], away_mp=a_stats['MP'],
+
+                # --- NEW UNDERLYING METRICS ---
+                home_sot_mp=h_stats['SoT_MP'], home_sot_conceded_mp=h_stats['SoT_Conceded_MP'],
+                home_corners_mp=h_stats['Corners_MP'], home_cards_mp=h_stats['Cards_MP'],
+                home_conversion=h_stats['Conversion'],
+
+                away_sot_mp=a_stats['SoT_MP'], away_sot_conceded_mp=a_stats['SoT_Conceded_MP'],
+                away_corners_mp=a_stats['Corners_MP'], away_cards_mp=a_stats['Cards_MP'],
+                away_conversion=a_stats['Conversion'],
+
+                # Form & Momentum
+                home_form_pts=h_stats['Form_Pts'], home_form_gf=h_stats['Form_GF'], home_form_ga=h_stats['Form_GA'],
+                home_form_sot=h_stats['Form_SoT'], home_form_sot_c=h_stats['Form_SoT_C'],
+
+                away_form_pts=a_stats['Form_Pts'], away_form_gf=a_stats['Form_GF'], away_form_ga=a_stats['Form_GA'],
+                away_form_sot=a_stats['Form_SoT'], away_form_sot_c=a_stats['Form_SoT_C']
             )
 
             df = data.get_data_as_dataframe()
@@ -157,7 +167,6 @@ def main():
 
             st.markdown(f"### Result: **{res_map[result]}**")
 
-            # Highlight result with color
             cols = st.columns(3)
             for i, (outcome, val) in enumerate(probs.items()):
                 with cols[i]:

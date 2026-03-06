@@ -7,6 +7,11 @@ from sklearn.metrics import accuracy_score
 from src.exception import CustomException
 from src.logger import logging
 
+import torch.nn as nn
+import torch
+from sklearn.base import BaseEstimator, ClassifierMixin
+from sklearn.ensemble import VotingClassifier
+
 
 def save_object(file_path, obj):
     """
@@ -87,3 +92,41 @@ def evaluate_models(X_train, y_train, X_test, y_test, models, param=None):
 
     except Exception as e:
         raise CustomException(e, sys)
+
+
+class TabularNN(nn.Module):
+    def __init__(self, input_dim=30, neurons=64, dropout_rate=0.2):
+        super(TabularNN, self).__init__()
+        self.layer1 = nn.Linear(input_dim, neurons)
+        self.bn1 = nn.BatchNorm1d(neurons)
+        self.dropout1 = nn.Dropout(dropout_rate)
+        self.layer2 = nn.Linear(neurons, neurons // 2)
+        self.bn2 = nn.BatchNorm1d(neurons // 2)
+        self.dropout2 = nn.Dropout(dropout_rate)
+        self.output = nn.Linear(neurons // 2, 3)
+
+    def forward(self, X):
+        X = torch.relu(self.bn1(self.layer1(X)))
+        X = self.dropout1(X)
+        X = torch.relu(self.bn2(self.layer2(X)))
+        X = self.dropout2(X)
+        X = self.output(X)
+        return X
+
+
+class WeightedVotingWrapper(BaseEstimator, ClassifierMixin):
+    def __init__(self, estimators=None, nn_weight=1.0):
+        self.estimators = estimators
+        self.nn_weight = nn_weight
+        self.model_ = None
+
+    def fit(self, X, y):
+        self.model_ = VotingClassifier(
+            estimators=self.estimators, voting='soft', weights=[1.0, self.nn_weight])
+        self.model_.fit(X, y)
+        self.classes_ = self.model_.classes_
+        return self
+
+    def predict(self, X): return self.model_.predict(X)
+    def predict_proba(self, X): return self.model_.predict_proba(X)
+    def score(self, X, y): return self.model_.score(X, y)
