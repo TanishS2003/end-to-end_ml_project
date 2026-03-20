@@ -130,7 +130,7 @@ class ModelTrainer:
                     NeuralNetClassifier(
                         module=TabularNN, module__input_dim=X_train.shape[1],
                         criterion=nn.CrossEntropyLoss, criterion__weight=class_weights_tensor,
-                        optimizer=optim.Adam, max_epochs=50, verbose=0, train_split=None
+                        optimizer=optim.Adam, max_epochs=50, verbose=0, train_split=None, iterator_train__drop_last=True
                     ),
                     {'module__neurons': Categorical([64, 128]), 'lr': Real(
                         1e-4, 1e-2, prior='log-uniform'), 'batch_size': Categorical([16, 32])},
